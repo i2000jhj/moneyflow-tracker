@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>머니플로우 트래커</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <div>
+        <p class="eyebrow">Moneyflow v3 Dashboard</p>
+        <h1>머니플로우 트래커</h1>
+      </div>
+      <div class="header-meta" aria-label="데이터 기준">
+        <span id="asOfBadge">기준일 —</span>
+        <span id="generatedBadge">갱신 —</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="app" class="dashboard">
+    <section class="section" aria-labelledby="temperatureTitle">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Market Temperature</p>
+          <h2 id="temperatureTitle">시장 온도계</h2>
+        </div>
+      </div>
+      <div id="temperatureCards" class="market-grid"></div>
+    </section>
+
+    <section class="section" aria-labelledby="rrgTitle">
+      <div class="section-heading with-controls">
+        <div>
+          <p class="eyebrow">Relative Rotation Graph</p>
+          <h2 id="rrgTitle">RRG 순환매 레이더</h2>
+        </div>
+        <div class="segmented" role="group" aria-label="RRG 시장 필터">
+          <button type="button" class="segmented-button is-active" data-action="rrg-filter" data-market="ALL">전체</button>
+          <button type="button" class="segmented-button" data-action="rrg-filter" data-market="US">US</button>
+          <button type="button" class="segmented-button" data-action="rrg-filter" data-market="KR">KR</button>
+          <button type="button" class="segmented-button" data-action="rrg-filter" data-market="JP">JP</button>
+        </div>
+      </div>
+      <div id="rrgChart" class="chart-panel rrg-panel"></div>
+      <div id="rrgTooltip" class="tooltip" hidden></div>
+    </section>
+
+    <section class="section" aria-labelledby="rotationTitle">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Rotation Pairs</p>
+          <h2 id="rotationTitle">순환매 페어</h2>
+        </div>
+      </div>
+      <div id="rotationPairs" class="pair-grid"></div>
+    </section>
+
+    <section class="section" aria-labelledby="signalsTitle">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Timing Signals</p>
+          <h2 id="signalsTitle">타이밍 시그널</h2>
+        </div>
+      </div>
+      <div id="hitRateCards" class="hit-grid"></div>
+      <div class="table-panel">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>날짜</th>
+                <th>유형</th>
+                <th>시장</th>
+                <th>섹터</th>
+                <th>방향</th>
+                <th>노트</th>
+                <th>결과</th>
+              </tr>
+            </thead>
+            <tbody id="signalsTable"></tbody>
+          </table>
+        </div>
+        <div class="table-footer">
+          <button id="signalsMore" type="button" class="ghost-button" data-action="signals-more">더보기</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="rankingTitle">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Sector Attention</p>
+          <h2 id="rankingTitle">섹터 관심도 랭킹</h2>
+        </div>
+      </div>
+      <div id="rankingList" class="ranking-list"></div>
+    </section>
+
+    <section class="section" aria-labelledby="etfTitle">
+      <div class="section-heading with-controls">
+        <div>
+          <p class="eyebrow">ETF Flow Proxy</p>
+          <h2 id="etfTitle">ETF 자금흐름</h2>
+        </div>
+        <div class="control-stack">
+          <div class="segmented" role="group" aria-label="ETF 기간">
+            <button type="button" class="segmented-button" data-action="etf-period" data-period="1w">1주</button>
+            <button type="button" class="segmented-button is-active" data-action="etf-period" data-period="1m">1개월</button>
+            <button type="button" class="segmented-button" data-action="etf-period" data-period="3m">3개월</button>
+            <button type="button" class="segmented-button" data-action="etf-period" data-period="6m">6개월</button>
+          </div>
+          <div class="segmented" role="group" aria-label="ETF 그룹">
+            <button type="button" class="segmented-button is-active" data-action="etf-group" data-group="ALL">전체</button>
+            <button type="button" class="segmented-button" data-action="etf-group" data-group="미국 섹터">미국 섹터</button>
+            <button type="button" class="segmented-button" data-action="etf-group" data-group="글로벌 지역">글로벌 지역</button>
+            <button type="button" class="segmented-button" data-action="etf-group" data-group="테마">테마</button>
+          </div>
+        </div>
+      </div>
+      <div id="etfBars" class="etf-bars"></div>
+      <div class="table-panel">
+        <div class="table-scroll">
+          <table>
+            <thead id="etfTableHead"></thead>
+            <tbody id="etfTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>가격·거래대금 기반 추정치이며 실제 펀드 설정/환매 자금이 아닙니다. 투자 판단 참고용.</p>
+    <p>출처: Yahoo Finance · Google News RSS · 자체 머니플로우 엔진.</p>
+  </footer>
+
+  <div id="etfModal" class="modal" hidden>
+    <div class="modal-backdrop" data-action="modal-close"></div>
+    <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head">
+        <div>
+          <p id="modalTicker" class="eyebrow"></p>
+          <h2 id="modalTitle"></h2>
+        </div>
+        <button type="button" class="icon-button" data-action="modal-close" aria-label="닫기">×</button>
+      </div>
+      <canvas id="candleCanvas" width="980" height="460"></canvas>
+      <div id="modalNews" class="news-list"></div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

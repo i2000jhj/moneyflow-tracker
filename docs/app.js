@@ -30,6 +30,7 @@
 
   const state = {
     data: null,
+    sectorMembers: new Map(),
     globalMarket: "ALL",
     rrgMarket: "ALL",
     rrgRows: [],
@@ -53,6 +54,7 @@
         throw new Error(`data.json HTTP ${response.status}`);
       }
       state.data = await response.json();
+      state.sectorMembers = buildSectorMembersMap(state.data);
       renderAll();
     } catch (error) {
       renderError(error);
@@ -406,7 +408,7 @@
       );
 
       if (state.expandedSector === item.sector) {
-        row.append(makeScoreDetail(scoreHistory[item.sector] || []));
+        row.append(makeScoreDetail(scoreHistory[item.sector] || [], item.sector));
       }
 
       host.append(row);
@@ -750,7 +752,7 @@
     svg.append(label);
   }
 
-  function makeScoreDetail(rows) {
+  function makeScoreDetail(rows, sector) {
     const detail = div("score-detail");
     const legend = div("score-legend");
     const dotS = el("span", "legend-dot");
@@ -763,7 +765,23 @@
     mLabel.append(dotM, document.createTextNode("중기"));
     legend.append(sLabel, mLabel);
     detail.append(legend, makeScoreChart(rows));
+
+    const members = getSectorMembers(sector);
+    if (members.length) {
+      detail.append(makeSectorMemberList(members));
+    }
     return detail;
+  }
+
+  function makeSectorMemberList(members) {
+    const block = div("sector-members");
+    const label = el("p", "sector-members-title", "구성종목");
+    const chips = div("sector-member-chips");
+    members.forEach((member) => {
+      chips.append(el("span", "sector-member-chip", formatSectorMember(member)));
+    });
+    block.append(label, chips);
+    return block;
   }
 
   function makeScoreChart(rows) {
@@ -812,6 +830,10 @@
       el("span", "", `RS Momentum ${fmtNumber(row.rs_momentum, 2)}`),
       el("span", "", `구성 ${fmtInteger(row.member_count)}`)
     );
+    const memberSummary = formatTooltipMembers(row.sector);
+    if (memberSummary) {
+      tooltip.append(el("span", "", `구성종목 ${memberSummary}`));
+    }
     tooltip.hidden = false;
     const x = Math.min(window.innerWidth - 292, event.clientX + 14);
     const y = Math.min(window.innerHeight - 132, event.clientY + 14);
@@ -859,12 +881,15 @@
   }
 
   function tooltipText(row) {
-    return [
+    const lines = [
       row.sector || "—",
       `${row.market || "—"} · ${QUAD_KO[row.quadrant] || row.quadrant || "—"}`,
       `RS Ratio ${fmtNumber(row.rs_ratio, 2)}`,
       `RS Momentum ${fmtNumber(row.rs_momentum, 2)}`
-    ].join("\n");
+    ];
+    const memberSummary = formatTooltipMembers(row.sector);
+    if (memberSummary) lines.push(`구성종목 ${memberSummary}`);
+    return lines.join("\n");
   }
 
   function getVisibleMarkets() {
@@ -887,6 +912,43 @@
       if (item.sector) map.set(item.sector, item.market || "");
     });
     return map;
+  }
+
+  function buildSectorMembersMap(data) {
+    const raw = (((data || {}).moneyflow || {}).sector_members || {});
+    const map = new Map();
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return map;
+    Object.entries(raw).forEach(([sector, members]) => {
+      if (!Array.isArray(members)) return;
+      const normalized = members
+        .map((member) => ({
+          t: String((member && member.t) || "").trim(),
+          n: String((member && member.n) || "").trim()
+        }))
+        .filter((member) => member.t);
+      if (sector && normalized.length) map.set(sector, normalized);
+    });
+    return map;
+  }
+
+  function getSectorMembers(sector) {
+    if (!sector) return [];
+    return state.sectorMembers.get(sector) || [];
+  }
+
+  function formatSectorMember(member) {
+    const ticker = member.t || "—";
+    const name = member.n || "";
+    return !name || name === ticker ? ticker : `${name} (${ticker})`;
+  }
+
+  function formatTooltipMembers(sector) {
+    const members = getSectorMembers(sector);
+    if (!members.length) return "";
+    const tickers = members.slice(0, 5).map((member) => member.t).filter(Boolean);
+    if (!tickers.length) return "";
+    const extra = members.length - tickers.length;
+    return extra > 0 ? `${tickers.join(", ")} 외 ${extra}개` : tickers.join(", ");
   }
 
   function calculateHitRates(signals) {

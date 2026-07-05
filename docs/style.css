@@ -528,6 +528,41 @@ tbody tr:hover {
   padding-top: 12px;
 }
 
+.sector-members {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sector-members-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sector-member-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sector-member-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 24px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: rgba(88, 166, 255, 0.08);
+  color: var(--text);
+  padding: 3px 9px;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: left;
+  white-space: normal;
+}
+
 .score-legend,
 .candle-legend {
   display: flex;

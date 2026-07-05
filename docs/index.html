@@ -20,6 +20,15 @@
     </div>
   </header>
 
+  <nav class="global-market-nav" aria-label="전역 시장 필터">
+    <div class="segmented global-market-tabs" role="group">
+      <button type="button" class="segmented-button is-active" data-action="global-market" data-market="ALL">전체</button>
+      <button type="button" class="segmented-button" data-action="global-market" data-market="US">미국</button>
+      <button type="button" class="segmented-button" data-action="global-market" data-market="KR">한국</button>
+      <button type="button" class="segmented-button" data-action="global-market" data-market="JP">일본</button>
+    </div>
+  </nav>
+
   <main id="app" class="dashboard">
     <section class="section" aria-labelledby="temperatureTitle">
       <div class="section-heading">
@@ -37,7 +46,7 @@
           <p class="eyebrow">Relative Rotation Graph</p>
           <h2 id="rrgTitle">RRG 순환매 레이더</h2>
         </div>
-        <div class="segmented" role="group" aria-label="RRG 시장 필터">
+        <div id="rrgMarketFilters" class="segmented" role="group" aria-label="RRG 시장 필터">
           <button type="button" class="segmented-button is-active" data-action="rrg-filter" data-market="ALL">전체</button>
           <button type="button" class="segmented-button" data-action="rrg-filter" data-market="US">US</button>
           <button type="button" class="segmented-button" data-action="rrg-filter" data-market="KR">KR</button>

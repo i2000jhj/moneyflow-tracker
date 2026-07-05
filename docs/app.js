@@ -30,6 +30,7 @@
 
   const state = {
     data: null,
+    globalMarket: "ALL",
     rrgMarket: "ALL",
     rrgRows: [],
     signalsVisible: 20,
@@ -84,7 +85,26 @@
     if (!actionNode) return;
 
     const action = actionNode.dataset.action;
+    if (action === "global-market") {
+      const market = actionNode.dataset.market || "ALL";
+      if (market !== "ALL" && !MARKETS.includes(market)) return;
+      state.globalMarket = market;
+      state.rrgMarket = market === "ALL" ? "ALL" : market;
+      state.signalsVisible = 20;
+      state.expandedSector = null;
+      hideTooltip();
+      renderGlobalMarketTabs();
+      renderTemperatures();
+      renderRrg();
+      renderRotationPairs();
+      renderHitRates();
+      renderSignals();
+      renderRanking();
+      return;
+    }
+
     if (action === "rrg-filter") {
+      if (state.globalMarket !== "ALL") return;
       state.rrgMarket = actionNode.dataset.market || "ALL";
       renderRrg();
       return;
@@ -140,6 +160,7 @@
 
   function renderAll() {
     renderHeader();
+    renderGlobalMarketTabs();
     renderTemperatures();
     renderRrg();
     renderRotationPairs();
@@ -156,6 +177,10 @@
     text("generatedBadge", `갱신 ${formatDateTime(data.generated_at)}`);
   }
 
+  function renderGlobalMarketTabs() {
+    setActive("global-market", "market", state.globalMarket);
+  }
+
   function renderTemperatures() {
     const host = byId("temperatureCards");
     host.replaceChildren();
@@ -163,8 +188,10 @@
     const moneyflow = (state.data && state.data.moneyflow) || {};
     const temperatures = moneyflow.temperatures || {};
     const history = moneyflow.temperature_history || {};
+    const markets = getVisibleMarkets();
+    host.classList.toggle("is-single", markets.length === 1);
 
-    MARKETS.forEach((market) => {
+    markets.forEach((market) => {
       const item = temperatures[market] || {};
       const zone = item.zone || "neutral";
       const color = ZONE_COLOR[zone] || ZONE_COLOR.neutral;
@@ -201,12 +228,16 @@
   }
 
   function renderRrg() {
-    setActive("rrg-filter", "market", state.rrgMarket);
+    const activeMarket = getActiveRrgMarket();
+    const filters = byId("rrgMarketFilters");
+    if (filters) filters.hidden = state.globalMarket !== "ALL";
+    if (state.globalMarket !== "ALL") state.rrgMarket = activeMarket;
+    setActive("rrg-filter", "market", activeMarket);
     const host = byId("rrgChart");
     host.replaceChildren();
 
     const rows = (((state.data || {}).moneyflow || {}).rrg || [])
-      .filter((row) => state.rrgMarket === "ALL" || row.market === state.rrgMarket);
+      .filter((row) => activeMarket === "ALL" || row.market === activeMarket);
     state.rrgRows = rows;
 
     if (!rows.length) {
@@ -215,6 +246,7 @@
     }
 
     const attention = (((state.data || {}).moneyflow || {}).attention || [])
+      .filter((item) => activeMarket === "ALL" || item.market === activeMarket)
       .slice()
       .sort((a, b) => safeNumber(a.rank_mid, 9999) - safeNumber(b.rank_mid, 9999));
     const labelSectors = new Set(attention.slice(0, 12).map((item) => item.sector));
@@ -247,7 +279,12 @@
   function renderRotationPairs() {
     const host = byId("rotationPairs");
     host.replaceChildren();
-    const pairs = (((state.data || {}).moneyflow || {}).rotation_pairs || []);
+    const sectorMarket = makeSectorMarketMap();
+    const pairs = (((state.data || {}).moneyflow || {}).rotation_pairs || [])
+      .filter((pair) => {
+        if (state.globalMarket === "ALL") return true;
+        return sectorMarket.get(pair.from_sector) === state.globalMarket || sectorMarket.get(pair.to_sector) === state.globalMarket;
+      });
 
     if (!pairs.length) {
       host.append(el("p", "card empty-state", "오늘 감지된 순환매 없음"));
@@ -277,8 +314,12 @@
   function renderHitRates() {
     const host = byId("hitRateCards");
     host.replaceChildren();
-    const hitRates = (((state.data || {}).moneyflow || {}).hit_rates || {});
-    const keys = SIGNAL_ORDER.filter((key) => hitRates[key]).concat(Object.keys(hitRates).filter((key) => !SIGNAL_ORDER.includes(key)));
+    const hitRates = state.globalMarket === "ALL"
+      ? (((state.data || {}).moneyflow || {}).hit_rates || {})
+      : calculateHitRates(getFilteredSignals());
+    const keys = state.globalMarket === "ALL"
+      ? SIGNAL_ORDER.filter((key) => hitRates[key]).concat(Object.keys(hitRates).filter((key) => !SIGNAL_ORDER.includes(key)))
+      : SIGNAL_ORDER;
 
     keys.forEach((key) => {
       const item = hitRates[key] || {};
@@ -295,7 +336,17 @@
   function renderSignals() {
     const body = byId("signalsTable");
     body.replaceChildren();
-    const signals = (((state.data || {}).moneyflow || {}).timing_signals || []);
+    const signals = getFilteredSignals();
+
+    if (!signals.length) {
+      const tr = el("tr");
+      const td = cell(state.globalMarket === "ALL" ? "타이밍 시그널 없음" : "해당 시장 시그널 없음", "empty-state");
+      td.colSpan = 7;
+      tr.append(td);
+      body.append(tr);
+      byId("signalsMore").hidden = true;
+      return;
+    }
 
     signals.slice(0, state.signalsVisible).forEach((signal) => {
       const tr = el("tr");
@@ -318,8 +369,9 @@
     const host = byId("rankingList");
     host.replaceChildren();
     const attention = (((state.data || {}).moneyflow || {}).attention || [])
+      .filter((item) => state.globalMarket === "ALL" || item.market === state.globalMarket)
       .slice()
-      .sort((a, b) => safeNumber(a.rank_mid, 9999) - safeNumber(b.rank_mid, 9999))
+      .sort((a, b) => safeNumber(b.score_mid, -Infinity) - safeNumber(a.score_mid, -Infinity))
       .slice(0, 20);
     const scoreHistory = (((state.data || {}).moneyflow || {}).score_history || {});
 
@@ -345,7 +397,7 @@
       bar.append(fill);
 
       row.append(
-        el("span", "rank-number", `#${item.rank_mid || index + 1}`),
+        el("span", "rank-number", `#${index + 1}`),
         el("span", "sector-name", item.sector || "—"),
         makeMarketTag(item.market || "—"),
         makeStageBadge(item.stage),
@@ -813,6 +865,43 @@
       `RS Ratio ${fmtNumber(row.rs_ratio, 2)}`,
       `RS Momentum ${fmtNumber(row.rs_momentum, 2)}`
     ].join("\n");
+  }
+
+  function getVisibleMarkets() {
+    return state.globalMarket === "ALL" ? MARKETS : MARKETS.filter((market) => market === state.globalMarket);
+  }
+
+  function getActiveRrgMarket() {
+    return state.globalMarket === "ALL" ? state.rrgMarket : state.globalMarket;
+  }
+
+  function getFilteredSignals() {
+    const signals = (((state.data || {}).moneyflow || {}).timing_signals || []);
+    return signals.filter((signal) => state.globalMarket === "ALL" || signal.market === state.globalMarket);
+  }
+
+  function makeSectorMarketMap() {
+    const map = new Map();
+    const attention = (((state.data || {}).moneyflow || {}).attention || []);
+    attention.forEach((item) => {
+      if (item.sector) map.set(item.sector, item.market || "");
+    });
+    return map;
+  }
+
+  function calculateHitRates(signals) {
+    return SIGNAL_ORDER.reduce((acc, key) => {
+      const rows = signals.filter((signal) => signal.signal_type === key);
+      const evaluated = rows.filter((signal) => signal.hit !== null && signal.hit !== undefined).length;
+      const hits = rows.filter((signal) => signal.hit === 1).length;
+      acc[key] = {
+        count: rows.length,
+        evaluated,
+        hits,
+        hit_rate: evaluated > 0 ? hits / evaluated : null
+      };
+      return acc;
+    }, {});
   }
 
   function getFilteredEtfs() {

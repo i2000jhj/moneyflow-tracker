@@ -27,6 +27,7 @@
   const SIGNAL_KO = { take_profit: "차익실현", next_leader: "차기 주도주", follow_rotation: "순환매 추종" };
   const DIR_KO = { buy_watch: "매수관찰", reduce: "비중축소" };
   const SIGNAL_ORDER = ["take_profit", "next_leader", "follow_rotation"];
+  installInlineFavicon();
 
   const state = {
     data: null,
@@ -39,7 +40,8 @@
     etfPeriod: "1m",
     etfGroup: "ALL",
     etfSort: { key: "returns.1m", dir: "desc" },
-    modalTicker: null
+    modalTicker: null,
+    sectorSheetSector: null
   };
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -66,7 +68,10 @@
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         closeModal();
+        closeSectorSheet();
+        return;
       }
+      handleActionKey(event);
     });
 
     const rrgChart = document.getElementById("rrgChart");
@@ -125,6 +130,12 @@
       return;
     }
 
+    if (action === "open-sector-sheet") {
+      const sector = actionNode.dataset.sector || "";
+      if (sector) openSectorSheet(sector);
+      return;
+    }
+
     if (action === "etf-period") {
       state.etfPeriod = actionNode.dataset.period || "1m";
       state.etfSort = { key: `returns.${state.etfPeriod}`, dir: "desc" };
@@ -157,7 +168,20 @@
 
     if (action === "modal-close") {
       closeModal();
+      return;
     }
+
+    if (action === "sector-sheet-close") {
+      closeSectorSheet();
+    }
+  }
+
+  function handleActionKey(event) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const actionNode = event.target.closest && event.target.closest("[data-action]");
+    if (!actionNode || actionNode.tagName === "BUTTON" || actionNode.tagName === "A") return;
+    event.preventDefault();
+    actionNode.click();
   }
 
   function renderAll() {
@@ -296,7 +320,11 @@
     pairs.forEach((pair) => {
       const card = div("card pair-card");
       const arrow = div("pair-arrow");
-      arrow.append(el("span", "", pair.from_sector || "—"), el("span", "neutral", "→"), el("span", "", pair.to_sector || "—"));
+      arrow.append(
+        makeSectorTrigger(pair.from_sector, "pair-sector"),
+        el("span", "neutral", "→"),
+        makeSectorTrigger(pair.to_sector, "pair-sector")
+      );
       const strength = clamp(safeNumber(pair.strength, 0), 0, 100);
       const bar = div("strength-bar");
       const fill = el("i");
@@ -356,7 +384,7 @@
         cell(signal.date || "—"),
         cell(SIGNAL_KO[signal.signal_type] || signal.signal_type || "—"),
         cell(signal.market || "—"),
-        cell(signal.sector || "—"),
+        sectorCell(signal.sector || ""),
         cell(DIR_KO[signal.direction] || signal.direction || "—"),
         noteCell(signal.note || ""),
         resultCell(signal)
@@ -400,7 +428,7 @@
 
       row.append(
         el("span", "rank-number", `#${index + 1}`),
-        el("span", "sector-name", item.sector || "—"),
+        makeSectorTrigger(item.sector, "sector-name"),
         makeMarketTag(item.market || "—"),
         makeStageBadge(item.stage),
         bar,
@@ -527,7 +555,68 @@
     if (!modal || modal.hidden) return;
     modal.hidden = true;
     state.modalTicker = null;
-    document.body.style.overflow = "";
+    if (!state.sectorSheetSector) document.body.style.overflow = "";
+  }
+
+  function openSectorSheet(sector) {
+    if (!sector) return;
+    hideTooltip();
+    state.sectorSheetSector = sector;
+
+    const sheet = ensureSectorSheet();
+    const dialog = sheet.querySelector(".sector-sheet-dialog");
+    const titleId = "sectorSheetTitle";
+    const members = getSectorMembers(sector);
+    const market = getSectorMarket(sector);
+    const head = div("sector-sheet-head");
+    const titleBlock = div("sector-sheet-title");
+    const title = el("h2", "", sector);
+    title.id = titleId;
+    titleBlock.append(el("p", "eyebrow", "Sector Members"), title);
+    if (market) titleBlock.append(makeMarketTag(market));
+
+    const close = el("button", "icon-button", "×");
+    close.type = "button";
+    close.dataset.action = "sector-sheet-close";
+    close.setAttribute("aria-label", "닫기");
+    head.append(titleBlock, close);
+
+    const body = div("sector-sheet-body");
+    if (members.length) {
+      body.append(makeSectorMemberList(members));
+    } else {
+      body.append(el("p", "empty-state", "구성종목 정보 없음"));
+    }
+
+    dialog.replaceChildren(head, body);
+    dialog.setAttribute("aria-labelledby", titleId);
+    sheet.hidden = false;
+    document.body.style.overflow = "hidden";
+    requestAnimationFrame(() => close.focus({ preventScroll: true }));
+  }
+
+  function closeSectorSheet() {
+    const sheet = byId("sectorSheet");
+    if (!sheet || sheet.hidden) return;
+    sheet.hidden = true;
+    state.sectorSheetSector = null;
+    if (!state.modalTicker) document.body.style.overflow = "";
+  }
+
+  function ensureSectorSheet() {
+    const existing = byId("sectorSheet");
+    if (existing) return existing;
+    const sheet = div("sector-sheet");
+    sheet.id = "sectorSheet";
+    sheet.hidden = true;
+    const backdrop = div("sector-sheet-backdrop");
+    backdrop.dataset.action = "sector-sheet-close";
+    const dialog = el("section", "sector-sheet-dialog");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    sheet.append(backdrop, dialog);
+    document.body.append(sheet);
+    return sheet;
   }
 
   function renderNews(item) {
@@ -735,6 +824,10 @@
       "stroke-dasharray": row.small_sample === 1 ? "3 3" : "",
       opacity: row.small_sample === 1 ? 0.58 : 0.94,
       "data-rrg-index": index,
+      "data-action": "open-sector-sheet",
+      "data-sector": row.sector || "",
+      class: "rrg-point sector-trigger",
+      role: "button",
       tabindex: 0
     });
     circle.append(svgEl("title", {}, tooltipText(row)));
@@ -747,7 +840,12 @@
       y: rrgY(row.rs_momentum, extent, pad, plotH) - 8,
       fill: "#e6edf3",
       "font-size": 11,
-      "data-rrg-index": index
+      "data-rrg-index": index,
+      "data-action": "open-sector-sheet",
+      "data-sector": row.sector || "",
+      class: "rrg-label sector-trigger",
+      role: "button",
+      tabindex: 0
     }, row.sector || "");
     svg.append(label);
   }
@@ -782,6 +880,24 @@
     });
     block.append(label, chips);
     return block;
+  }
+
+  function makeSectorTrigger(sector, className) {
+    const node = el("span", className || "", sector || "—");
+    if (!sector) return node;
+    node.classList.add("sector-trigger");
+    node.dataset.action = "open-sector-sheet";
+    node.dataset.sector = sector;
+    node.setAttribute("role", "button");
+    node.setAttribute("tabindex", "0");
+    node.setAttribute("aria-label", `${sector} 구성종목 보기`);
+    return node;
+  }
+
+  function sectorCell(sector) {
+    const td = cell("");
+    td.append(makeSectorTrigger(sector, "table-sector"));
+    return td;
   }
 
   function makeScoreChart(rows) {
@@ -912,6 +1028,19 @@
       if (item.sector) map.set(item.sector, item.market || "");
     });
     return map;
+  }
+
+  function getSectorMarket(sector) {
+    if (!sector) return "—";
+    const inferred = inferMarketFromSectorName(sector);
+    if (inferred) return inferred;
+    return makeSectorMarketMap().get(sector) || "—";
+  }
+
+  function inferMarketFromSectorName(sector) {
+    if (sector.startsWith("한국")) return "KR";
+    if (sector.startsWith("일본")) return "JP";
+    return "";
   }
 
   function buildSectorMembersMap(data) {
@@ -1049,6 +1178,14 @@
     const card = div("card");
     card.append(el("h2", "", "데이터 로딩 실패"), el("p", "neutral", error && error.message ? error.message : "알 수 없는 오류"));
     app.append(card);
+  }
+
+  function installInlineFavicon() {
+    if (document.querySelector("link[rel~='icon']")) return;
+    const link = document.createElement("link");
+    link.rel = "icon";
+    link.href = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230d1117'/%3E%3Cpath d='M3 10l3-3 2 2 5-5' fill='none' stroke='%2358a6ff' stroke-width='2'/%3E%3C/svg%3E";
+    document.head.append(link);
   }
 
   function makeBadge(label, color) {

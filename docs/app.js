@@ -100,6 +100,7 @@
       state.signalsVisible = 20;
       state.expandedSector = null;
       hideTooltip();
+      renderHeader();
       renderGlobalMarketTabs();
       renderTemperatures();
       renderRrg();
@@ -199,7 +200,7 @@
   function renderHeader() {
     const data = state.data || {};
     const moneyflow = data.moneyflow || {};
-    text("asOfBadge", `기준일 ${moneyflow.as_of || "—"}`);
+    text("asOfBadge", `기준일 ${formatAsOfBadge(moneyflow)}`);
     text("generatedBadge", `갱신 ${formatDateTime(data.generated_at)}`);
   }
 
@@ -428,7 +429,7 @@
 
       row.append(
         el("span", "rank-number", `#${index + 1}`),
-        makeSectorTrigger(item.sector, "sector-name"),
+        makeRankSectorCell(item),
         makeMarketTag(item.market || "—"),
         makeStageBadge(item.stage),
         bar,
@@ -568,12 +569,16 @@
     const titleId = "sectorSheetTitle";
     const members = getSectorMembers(sector);
     const market = getSectorMarket(sector);
+    const isSmallSample = isSmallSampleSector(sector);
     const head = div("sector-sheet-head");
     const titleBlock = div("sector-sheet-title");
     const title = el("h2", "", sector);
     title.id = titleId;
     titleBlock.append(el("p", "eyebrow", "Sector Members"), title);
-    if (market) titleBlock.append(makeMarketTag(market));
+    const meta = div("sector-sheet-meta");
+    if (market) meta.append(makeMarketTag(market));
+    if (isSmallSample) meta.append(makeSmallSampleBadge());
+    if (meta.childElementCount) titleBlock.append(meta);
 
     const close = el("button", "icon-button", "×");
     close.type = "button";
@@ -876,10 +881,26 @@
     const label = el("p", "sector-members-title", "구성종목");
     const chips = div("sector-member-chips");
     members.forEach((member) => {
-      chips.append(el("span", "sector-member-chip", formatSectorMember(member)));
+      chips.append(makeSectorMemberChip(member));
     });
     block.append(label, chips);
     return block;
+  }
+
+  function makeRankSectorCell(item) {
+    const cellNode = el("span", "rank-sector-cell");
+    cellNode.append(makeSectorTrigger(item.sector, "sector-name"));
+    if (isSmallSampleAttention(item)) cellNode.append(makeSmallSampleBadge());
+    return cellNode;
+  }
+
+  function makeSectorMemberChip(member) {
+    const chip = el("span", "sector-member-chip");
+    chip.append(el("span", "sector-member-label", formatSectorMember(member)));
+    if (isNum(member && member.c)) {
+      chip.append(el("span", `sector-member-change ${valueClass(member.c)}`, fmtPercent(member.c, 1, true)));
+    }
+    return chip;
   }
 
   function makeSectorTrigger(sector, className) {
@@ -1050,14 +1071,28 @@
     Object.entries(raw).forEach(([sector, members]) => {
       if (!Array.isArray(members)) return;
       const normalized = members
-        .map((member) => ({
-          t: String((member && member.t) || "").trim(),
-          n: String((member && member.n) || "").trim()
-        }))
+        .map((member) => normalizeSectorMember(member))
         .filter((member) => member.t);
       if (sector && normalized.length) map.set(sector, normalized);
     });
     return map;
+  }
+
+  function normalizeSectorMember(member) {
+    const normalized = {
+      t: String((member && member.t) || "").trim(),
+      n: String((member && member.n) || "").trim()
+    };
+    const change = normalizeMemberChange(member);
+    if (change !== null) normalized.c = change;
+    return normalized;
+  }
+
+  function normalizeMemberChange(member) {
+    if (!member || !Object.prototype.hasOwnProperty.call(member, "c")) return null;
+    if (member.c === null || member.c === "") return null;
+    const value = Number(member.c);
+    return Number.isFinite(value) ? value : null;
   }
 
   function getSectorMembers(sector) {
@@ -1078,6 +1113,16 @@
     if (!tickers.length) return "";
     const extra = members.length - tickers.length;
     return extra > 0 ? `${tickers.join(", ")} 외 ${extra}개` : tickers.join(", ");
+  }
+
+  function isSmallSampleSector(sector) {
+    if (!sector) return false;
+    return (((state.data || {}).moneyflow || {}).attention || [])
+      .some((item) => item.sector === sector && isSmallSampleAttention(item));
+  }
+
+  function isSmallSampleAttention(item) {
+    return safeNumber(item && item.member_count, Infinity) < 5;
   }
 
   function calculateHitRates(signals) {
@@ -1200,6 +1245,10 @@
     return el("span", "market-tag", label || "—");
   }
 
+  function makeSmallSampleBadge() {
+    return el("span", "sample-badge", "표본 부족");
+  }
+
   function makeStageBadge(stage) {
     const color = STAGE_COLOR[stage] || STAGE_COLOR.neutral;
     const badge = el("span", "stage-badge", STAGE_KO[stage] || stage || "—");
@@ -1272,6 +1321,31 @@
   function formatDateTime(value) {
     if (!value) return "—";
     return String(value).replace("T", " ");
+  }
+
+  function formatAsOfBadge(moneyflow) {
+    const fallback = moneyflow && moneyflow.as_of ? String(moneyflow.as_of) : "—";
+    const dates = moneyflow && moneyflow.as_of_by_market;
+    if (!dates || typeof dates !== "object" || Array.isArray(dates)) return fallback;
+
+    if (state.globalMarket !== "ALL") {
+      return formatMarketAsOf(state.globalMarket, dates[state.globalMarket] || fallback);
+    }
+
+    const parts = MARKETS.map((market) => formatMarketAsOf(market, dates[market] || fallback));
+    return parts.some((part) => !part.endsWith(" —")) ? parts.join(" · ") : fallback;
+  }
+
+  function formatMarketAsOf(market, value) {
+    return `${market} ${formatShortDate(value)}`;
+  }
+
+  function formatShortDate(value) {
+    if (!value) return "—";
+    const textValue = String(value);
+    const match = textValue.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (!match) return textValue;
+    return `${Number(match[2])}/${Number(match[3])}`;
   }
 
   function fmtNumber(value, digits) {

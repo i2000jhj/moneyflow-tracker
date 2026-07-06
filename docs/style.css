@@ -565,6 +565,33 @@ tbody tr:hover {
   white-space: nowrap;
 }
 
+.rank-sector-cell {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.rank-sector-cell .sector-name {
+  flex: 1 1 auto;
+}
+
+.sample-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 20px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: rgba(139, 148, 158, 0.12);
+  color: var(--muted);
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .rank-bar {
   height: 10px;
 }
@@ -597,6 +624,7 @@ tbody tr:hover {
 .sector-member-chip {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   max-width: 100%;
   min-height: 24px;
   border: 1px solid var(--border-soft);
@@ -609,6 +637,18 @@ tbody tr:hover {
   overflow-wrap: anywhere;
   text-align: left;
   white-space: normal;
+}
+
+.sector-member-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sector-member-change {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .score-legend,
@@ -763,6 +803,12 @@ tbody tr:hover {
 
 .sector-sheet-title h2 {
   overflow-wrap: anywhere;
+}
+
+.sector-sheet-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .sector-sheet-title .market-tag {

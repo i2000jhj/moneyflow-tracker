@@ -34,6 +34,9 @@
     sectorMembers: new Map(),
     globalMarket: "ALL",
     rrgMarket: "ALL",
+    pairMarket: "ALL",
+    signalMarket: "ALL",
+    rankMarket: "ALL",
     rrgRows: [],
     signalsVisible: 20,
     expandedSector: null,
@@ -97,6 +100,9 @@
       if (market !== "ALL" && !MARKETS.includes(market)) return;
       state.globalMarket = market;
       state.rrgMarket = market === "ALL" ? "ALL" : market;
+      state.pairMarket = market === "ALL" ? "ALL" : market;
+      state.signalMarket = market === "ALL" ? "ALL" : market;
+      state.rankMarket = market === "ALL" ? "ALL" : market;
       state.signalsVisible = 20;
       state.expandedSector = null;
       hideTooltip();
@@ -113,8 +119,38 @@
 
     if (action === "rrg-filter") {
       if (state.globalMarket !== "ALL") return;
-      state.rrgMarket = actionNode.dataset.market || "ALL";
+      const market = readMarket(actionNode);
+      if (!market) return;
+      state.rrgMarket = market;
       renderRrg();
+      return;
+    }
+
+    if (action === "pair-filter") {
+      if (state.globalMarket !== "ALL") return;
+      const market = readMarket(actionNode);
+      if (!market) return;
+      state.pairMarket = market;
+      renderRotationPairs();
+      return;
+    }
+
+    if (action === "signal-filter") {
+      if (state.globalMarket !== "ALL") return;
+      const market = readMarket(actionNode);
+      if (!market) return;
+      state.signalMarket = market;
+      state.signalsVisible = 20;
+      renderSignals();
+      return;
+    }
+
+    if (action === "rank-filter") {
+      if (state.globalMarket !== "ALL") return;
+      const market = readMarket(actionNode);
+      if (!market) return;
+      state.rankMarket = market;
+      renderRanking();
       return;
     }
 
@@ -255,11 +291,7 @@
   }
 
   function renderRrg() {
-    const activeMarket = getActiveRrgMarket();
-    const filters = byId("rrgMarketFilters");
-    if (filters) filters.hidden = state.globalMarket !== "ALL";
-    if (state.globalMarket !== "ALL") state.rrgMarket = activeMarket;
-    setActive("rrg-filter", "market", activeMarket);
+    const activeMarket = prepareSectionMarketFilter("rrgMarketFilters", "rrg-filter", "rrgMarket");
     const host = byId("rrgChart");
     host.replaceChildren();
 
@@ -304,13 +336,14 @@
   }
 
   function renderRotationPairs() {
+    const activeMarket = prepareSectionMarketFilter("pairMarketFilters", "pair-filter", "pairMarket");
     const host = byId("rotationPairs");
     host.replaceChildren();
     const sectorMarket = makeSectorMarketMap();
     const pairs = (((state.data || {}).moneyflow || {}).rotation_pairs || [])
       .filter((pair) => {
-        if (state.globalMarket === "ALL") return true;
-        return sectorMarket.get(pair.from_sector) === state.globalMarket || sectorMarket.get(pair.to_sector) === state.globalMarket;
+        if (activeMarket === "ALL") return true;
+        return sectorMarket.get(pair.from_sector) === activeMarket || sectorMarket.get(pair.to_sector) === activeMarket;
       });
 
     if (!pairs.length) {
@@ -347,7 +380,7 @@
     host.replaceChildren();
     const hitRates = state.globalMarket === "ALL"
       ? (((state.data || {}).moneyflow || {}).hit_rates || {})
-      : calculateHitRates(getFilteredSignals());
+      : calculateHitRates(getGlobalFilteredSignals());
     const keys = state.globalMarket === "ALL"
       ? SIGNAL_ORDER.filter((key) => hitRates[key]).concat(Object.keys(hitRates).filter((key) => !SIGNAL_ORDER.includes(key)))
       : SIGNAL_ORDER;
@@ -365,13 +398,14 @@
   }
 
   function renderSignals() {
+    const activeMarket = prepareSectionMarketFilter("signalMarketFilters", "signal-filter", "signalMarket");
     const body = byId("signalsTable");
     body.replaceChildren();
-    const signals = getFilteredSignals();
+    const signals = getFilteredSignals(activeMarket);
 
     if (!signals.length) {
       const tr = el("tr");
-      const td = cell(state.globalMarket === "ALL" ? "타이밍 시그널 없음" : "해당 시장 시그널 없음", "empty-state");
+      const td = cell(activeMarket === "ALL" ? "타이밍 시그널 없음" : "해당 시장 시그널 없음", "empty-state");
       td.colSpan = 7;
       tr.append(td);
       body.append(tr);
@@ -397,10 +431,11 @@
   }
 
   function renderRanking() {
+    const activeMarket = prepareSectionMarketFilter("rankMarketFilters", "rank-filter", "rankMarket");
     const host = byId("rankingList");
     host.replaceChildren();
     const attention = (((state.data || {}).moneyflow || {}).attention || [])
-      .filter((item) => state.globalMarket === "ALL" || item.market === state.globalMarket)
+      .filter((item) => activeMarket === "ALL" || item.market === activeMarket)
       .slice()
       .sort((a, b) => safeNumber(b.score_mid, -Infinity) - safeNumber(a.score_mid, -Infinity))
       .slice(0, 20);
@@ -1033,11 +1068,30 @@
     return state.globalMarket === "ALL" ? MARKETS : MARKETS.filter((market) => market === state.globalMarket);
   }
 
-  function getActiveRrgMarket() {
-    return state.globalMarket === "ALL" ? state.rrgMarket : state.globalMarket;
+  function getEffectiveSectionMarket(sectionMarket) {
+    return state.globalMarket === "ALL" ? sectionMarket : state.globalMarket;
   }
 
-  function getFilteredSignals() {
+  function prepareSectionMarketFilter(filtersId, action, stateKey) {
+    const activeMarket = getEffectiveSectionMarket(state[stateKey]);
+    const filters = byId(filtersId);
+    if (filters) filters.hidden = state.globalMarket !== "ALL";
+    if (state.globalMarket !== "ALL") state[stateKey] = activeMarket;
+    setActive(action, "market", activeMarket);
+    return activeMarket;
+  }
+
+  function readMarket(actionNode) {
+    const market = actionNode.dataset.market || "ALL";
+    return market === "ALL" || MARKETS.includes(market) ? market : null;
+  }
+
+  function getFilteredSignals(activeMarket) {
+    const signals = (((state.data || {}).moneyflow || {}).timing_signals || []);
+    return signals.filter((signal) => activeMarket === "ALL" || signal.market === activeMarket);
+  }
+
+  function getGlobalFilteredSignals() {
     const signals = (((state.data || {}).moneyflow || {}).timing_signals || []);
     return signals.filter((signal) => state.globalMarket === "ALL" || signal.market === state.globalMarket);
   }

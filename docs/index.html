@@ -58,20 +58,32 @@
     </section>
 
     <section class="section" aria-labelledby="rotationTitle">
-      <div class="section-heading">
+      <div class="section-heading with-controls">
         <div>
           <p class="eyebrow">Rotation Pairs</p>
           <h2 id="rotationTitle">순환매 페어</h2>
+        </div>
+        <div id="pairMarketFilters" class="segmented" role="group" aria-label="순환매 페어 시장 필터">
+          <button type="button" class="segmented-button is-active" data-action="pair-filter" data-market="ALL">전체</button>
+          <button type="button" class="segmented-button" data-action="pair-filter" data-market="US">US</button>
+          <button type="button" class="segmented-button" data-action="pair-filter" data-market="KR">KR</button>
+          <button type="button" class="segmented-button" data-action="pair-filter" data-market="JP">JP</button>
         </div>
       </div>
       <div id="rotationPairs" class="pair-grid"></div>
     </section>
 
     <section class="section" aria-labelledby="signalsTitle">
-      <div class="section-heading">
+      <div class="section-heading with-controls">
         <div>
           <p class="eyebrow">Timing Signals</p>
           <h2 id="signalsTitle">타이밍 시그널</h2>
+        </div>
+        <div id="signalMarketFilters" class="segmented" role="group" aria-label="타이밍 시그널 시장 필터">
+          <button type="button" class="segmented-button is-active" data-action="signal-filter" data-market="ALL">전체</button>
+          <button type="button" class="segmented-button" data-action="signal-filter" data-market="US">US</button>
+          <button type="button" class="segmented-button" data-action="signal-filter" data-market="KR">KR</button>
+          <button type="button" class="segmented-button" data-action="signal-filter" data-market="JP">JP</button>
         </div>
       </div>
       <div id="hitRateCards" class="hit-grid"></div>
@@ -99,10 +111,16 @@
     </section>
 
     <section class="section" aria-labelledby="rankingTitle">
-      <div class="section-heading">
+      <div class="section-heading with-controls">
         <div>
           <p class="eyebrow">Sector Attention</p>
           <h2 id="rankingTitle">섹터 관심도 랭킹</h2>
+        </div>
+        <div id="rankMarketFilters" class="segmented" role="group" aria-label="섹터 관심도 랭킹 시장 필터">
+          <button type="button" class="segmented-button is-active" data-action="rank-filter" data-market="ALL">전체</button>
+          <button type="button" class="segmented-button" data-action="rank-filter" data-market="US">US</button>
+          <button type="button" class="segmented-button" data-action="rank-filter" data-market="KR">KR</button>
+          <button type="button" class="segmented-button" data-action="rank-filter" data-market="JP">JP</button>
         </div>
       </div>
       <div id="rankingList" class="ranking-list"></div>

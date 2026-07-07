@@ -27,6 +27,7 @@
   const SIGNAL_KO = { take_profit: "차익실현", next_leader: "차기 주도주", follow_rotation: "순환매 추종" };
   const DIR_KO = { buy_watch: "매수관찰", reduce: "비중축소" };
   const SIGNAL_ORDER = ["take_profit", "next_leader", "follow_rotation"];
+  const ZONE_HYSTERESIS_TEXT = "경계 부근 깜빡임 방지를 위해 직전 구간을 유지합니다 (예: 중립은 70까지 유지)";
   installInlineFavicon();
 
   const state = {
@@ -72,6 +73,7 @@
       if (event.key === "Escape") {
         closeModal();
         closeSectorSheet();
+        closeZonePopovers();
         return;
       }
       handleActionKey(event);
@@ -91,10 +93,17 @@
   }
 
   function handleClick(event) {
+    if (!event.target.closest(".zone-help")) closeZonePopovers();
+
     const actionNode = event.target.closest("[data-action]");
     if (!actionNode) return;
 
     const action = actionNode.dataset.action;
+    if (action === "zone-help") {
+      toggleZonePopover(actionNode);
+      return;
+    }
+
     if (action === "global-market") {
       const market = actionNode.dataset.market || "ALL";
       if (market !== "ALL" && !MARKETS.includes(market)) return;
@@ -236,7 +245,7 @@
   function renderHeader() {
     const data = state.data || {};
     const moneyflow = data.moneyflow || {};
-    text("asOfBadge", `기준일 ${formatAsOfBadge(moneyflow)}`);
+    renderAsOfBadge(moneyflow);
     text("generatedBadge", `갱신 ${formatDateTime(data.generated_at)}`);
   }
 
@@ -261,7 +270,7 @@
       const card = div("card temperature-card");
 
       const head = div("card-head");
-      head.append(el("h3", "", market), makeBadge(ZONE_KO[zone] || zone, color));
+      head.append(el("h3", "", market), makeZoneBadge(zone, color));
       card.append(head);
 
       card.append(makeGauge(item.temperature, color));
@@ -284,7 +293,8 @@
         el("span", "", `구성 ${fmtInteger(item.member_count)}`)
       );
       card.append(metrics);
-      card.append(makeSparkline(history[market] || [], color, "temperature"));
+      const sparkline = makeTemperatureSparkline(history[market] || [], color);
+      if (sparkline) card.append(sparkline);
 
       host.append(card);
     });
@@ -340,19 +350,24 @@
     const host = byId("rotationPairs");
     host.replaceChildren();
     const sectorMarket = makeSectorMarketMap();
-    const pairs = (((state.data || {}).moneyflow || {}).rotation_pairs || [])
+    const moneyflow = ((state.data || {}).moneyflow || {});
+    const allPairs = moneyflow.rotation_pairs || [];
+    const commonAsOf = moneyflow.common_as_of || moneyflow.as_of || "";
+    const pairs = allPairs
       .filter((pair) => {
         if (activeMarket === "ALL") return true;
         return sectorMarket.get(pair.from_sector) === activeMarket || sectorMarket.get(pair.to_sector) === activeMarket;
       });
 
     if (!pairs.length) {
-      host.append(el("p", "card empty-state", "오늘 감지된 순환매 없음"));
+      const message = allPairs.length ? "해당 시장 표시 항목 없음" : "페어 없음";
+      host.append(el("p", "card empty-state", message));
       return;
     }
 
     pairs.forEach((pair) => {
-      const card = div("card pair-card");
+      const isPastPair = isPastPairDate(pair.date, commonAsOf);
+      const card = div(isPastPair ? "card pair-card pair-card-dimmed" : "card pair-card");
       const arrow = div("pair-arrow");
       arrow.append(
         makeSectorTrigger(pair.from_sector, "pair-sector"),
@@ -365,8 +380,9 @@
       fill.style.width = `${strength}%`;
       fill.style.background = "#58a6ff";
       bar.append(fill);
+      card.append(arrow);
+      if (isPastPair) card.append(makePairDateBadge(pair.date));
       card.append(
-        arrow,
         el("p", "neutral", `강도 ${fmtNumber(pair.strength, 1)} · 상관 ${fmtNumber(pair.correlation, 2)}`),
         bar,
         el("p", "neutral", pair.note || "")
@@ -769,24 +785,30 @@
     return svg;
   }
 
-  function makeSparkline(rows, color, key) {
-    const svg = svgEl("svg", { class: "spark-svg", viewBox: "0 0 190 52", "aria-hidden": "true" });
-    if (!Array.isArray(rows) || !rows.length) return svg;
+  function makeTemperatureSparkline(rows, color) {
+    if (!Array.isArray(rows)) return null;
+    const points = rows
+      .map((row) => safeNumber(row && row.temperature, null))
+      .filter((value) => value !== null);
+    if (points.length < 2) return null;
+
     const w = 190;
-    const h = 44;
-    const values = rows.map((row) => safeNumber(row[key], null)).filter((value) => value !== null);
-    if (!values.length) return svg;
-    const min = Math.min(0, ...values);
-    const max = Math.max(100, ...values);
-    const path = rows.map((row, index) => {
-      const value = safeNumber(row[key], 0);
-      const x = rows.length === 1 ? w / 2 : (index / (rows.length - 1)) * w;
-      const y = mapValue(value, min, max, h, 4);
+    const h = 36;
+    const pad = { top: 3, bottom: 4 };
+    const yFor = (value) => mapValue(clamp(value, 0, 100), 0, 100, h - pad.bottom, pad.top);
+    const path = points.map((value, index) => {
+      const x = (index / (points.length - 1)) * w;
+      const y = yFor(value);
       return `${index === 0 ? "M" : "L"} ${round(x)} ${round(y)}`;
     }).join(" ");
+    const lastX = w;
+    const lastY = yFor(points[points.length - 1]);
+    const svg = svgEl("svg", { class: "spark-svg", viewBox: `0 0 ${w} ${h}`, "aria-hidden": "true" });
     svg.append(
-      svgEl("path", { d: "M 0 44 L 190 44", stroke: "rgba(139,148,158,0.18)", "stroke-width": 1 }),
-      svgEl("path", { d: path, fill: "none", stroke: color, "stroke-width": 2.2, "stroke-linecap": "round", "stroke-linejoin": "round" })
+      svgEl("line", { x1: 0, y1: yFor(65), x2: w, y2: yFor(65), stroke: "rgba(139,148,158,0.28)", "stroke-width": 1, "stroke-dasharray": "3 4" }),
+      svgEl("line", { x1: 0, y1: yFor(35), x2: w, y2: yFor(35), stroke: "rgba(139,148,158,0.28)", "stroke-width": 1, "stroke-dasharray": "3 4" }),
+      svgEl("path", { d: path, fill: "none", stroke: color, "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round" }),
+      svgEl("circle", { cx: lastX, cy: lastY, r: 2.4, fill: color })
     );
     return svg;
   }
@@ -954,6 +976,22 @@
     const badge = makeBadge("역지표 관찰", "#f59e0b");
     badge.classList.add("signal-warning-badge");
     return badge;
+  }
+
+  function makeZoneBadge(zone, color) {
+    const wrapper = div("zone-help");
+    const badge = makeBadge(ZONE_KO[zone] || zone || "—", color);
+    const popover = div("zone-popover");
+    badge.classList.add("zone-badge");
+    badge.title = ZONE_HYSTERESIS_TEXT;
+    badge.dataset.action = "zone-help";
+    badge.setAttribute("role", "button");
+    badge.setAttribute("tabindex", "0");
+    badge.setAttribute("aria-expanded", "false");
+    popover.hidden = true;
+    popover.textContent = ZONE_HYSTERESIS_TEXT;
+    wrapper.append(badge, popover);
+    return wrapper;
   }
 
   function makeHitRateExcess(key, item) {
@@ -1386,6 +1424,26 @@
     });
   }
 
+  function toggleZonePopover(actionNode) {
+    const wrapper = actionNode.closest(".zone-help");
+    if (!wrapper) return;
+    const popover = wrapper.querySelector(".zone-popover");
+    if (!popover) return;
+    const willOpen = popover.hidden;
+    closeZonePopovers();
+    popover.hidden = !willOpen;
+    actionNode.setAttribute("aria-expanded", String(willOpen));
+  }
+
+  function closeZonePopovers() {
+    document.querySelectorAll(".zone-popover").forEach((popover) => {
+      popover.hidden = true;
+    });
+    document.querySelectorAll(".zone-badge[aria-expanded='true']").forEach((badge) => {
+      badge.setAttribute("aria-expanded", "false");
+    });
+  }
+
   function text(id, value) {
     byId(id).textContent = value;
   }
@@ -1419,21 +1477,39 @@
     return String(value).replace("T", " ");
   }
 
+  function renderAsOfBadge(moneyflow) {
+    const badge = byId("asOfBadge");
+    const formatted = formatAsOfBadge(moneyflow);
+    badge.textContent = `기준일 ${formatted.label}`;
+    badge.classList.toggle("as-of-stale", formatted.stale);
+  }
+
   function formatAsOfBadge(moneyflow) {
     const fallback = moneyflow && moneyflow.as_of ? String(moneyflow.as_of) : "—";
     const dates = moneyflow && moneyflow.as_of_by_market;
-    if (!dates || typeof dates !== "object" || Array.isArray(dates)) return fallback;
-
-    if (state.globalMarket !== "ALL") {
-      return formatMarketAsOf(state.globalMarket, dates[state.globalMarket] || fallback);
+    if (!dates || typeof dates !== "object" || Array.isArray(dates)) {
+      return { label: fallback, stale: isStaleDate(fallback) };
     }
 
-    const parts = MARKETS.map((market) => formatMarketAsOf(market, dates[market] || fallback));
-    return parts.some((part) => !part.endsWith(" —")) ? parts.join(" · ") : fallback;
+    if (state.globalMarket !== "ALL") {
+      const value = dates[state.globalMarket] || fallback;
+      return { label: formatMarketAsOf(state.globalMarket, value), stale: isStaleDate(value) };
+    }
+
+    const entries = MARKETS.map((market) => {
+      const value = dates[market] || fallback;
+      return { label: formatMarketAsOf(market, value), stale: isStaleDate(value) };
+    });
+    const hasMarketDate = entries.some((entry) => !entry.label.endsWith(" —"));
+    return {
+      label: hasMarketDate ? entries.map((entry) => entry.label).join(" · ") : fallback,
+      stale: entries.some((entry) => entry.stale)
+    };
   }
 
   function formatMarketAsOf(market, value) {
-    return `${market} ${formatShortDate(value)}`;
+    const relative = formatRelativeDate(value);
+    return `${market} ${formatShortDate(value)}${relative ? ` (${relative})` : ""}`;
   }
 
   function formatShortDate(value) {
@@ -1442,6 +1518,50 @@
     const match = textValue.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
     if (!match) return textValue;
     return `${Number(match[2])}/${Number(match[3])}`;
+  }
+
+  function formatRelativeDate(value) {
+    const days = daysFromToday(value);
+    if (days === null) return "";
+    if (days === 0) return "오늘";
+    if (days === 1) return "어제";
+    if (days > 1) return `${days}일 전`;
+    return `${Math.abs(days)}일 후`;
+  }
+
+  function isStaleDate(value) {
+    const days = daysFromToday(value);
+    return days !== null && days >= 3;
+  }
+
+  function daysFromToday(value) {
+    const date = parseIsoDate(value);
+    if (!date) return null;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.floor((today.getTime() - date.getTime()) / 86400000);
+  }
+
+  function parseIsoDate(value) {
+    if (!value) return null;
+    const match = String(value).match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (!match) return null;
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
+
+  function isPastPairDate(value, commonAsOf) {
+    return compareIsoDates(value, commonAsOf) < 0;
+  }
+
+  function compareIsoDates(a, b) {
+    const dateA = parseIsoDate(a);
+    const dateB = parseIsoDate(b);
+    if (!dateA || !dateB) return 0;
+    return dateA.getTime() - dateB.getTime();
+  }
+
+  function makePairDateBadge(value) {
+    return el("span", "pair-date-badge", formatShortDate(value));
   }
 
   function fmtNumber(value, digits) {

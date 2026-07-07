@@ -31,13 +31,19 @@
 
   <main id="app" class="dashboard">
     <section class="section" aria-labelledby="temperatureTitle">
-      <div class="section-heading">
+      <div class="section-heading with-controls">
         <div>
           <p class="eyebrow">Market Temperature</p>
           <h2 id="temperatureTitle">시장 온도계</h2>
         </div>
+        <div id="tempPeriodFilters" class="segmented" role="group" aria-label="온도 추이 기간">
+          <button type="button" class="segmented-button is-active" data-action="temp-period" data-days="30">30일</button>
+          <button type="button" class="segmented-button" data-action="temp-period" data-days="60">60일</button>
+          <button type="button" class="segmented-button" data-action="temp-period" data-days="90">90일</button>
+        </div>
       </div>
       <div id="temperatureCards" class="market-grid"></div>
+      <div id="temperatureHistory" class="chart-panel temp-history-panel"></div>
     </section>
 
     <section class="section" aria-labelledby="rrgTitle">

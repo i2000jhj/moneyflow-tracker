@@ -6,6 +6,7 @@
   const PERIOD_LABEL = { "1w": "1주", "1m": "1개월", "3m": "3개월", "6m": "6개월" };
   const ZONE_KO = { panic: "패닉", fear: "공포", neutral: "중립", greed: "탐욕", overheat: "과열" };
   const ZONE_COLOR = { panic: "#3b82f6", fear: "#22d3ee", neutral: "#8b949e", greed: "#f59e0b", overheat: "#ef4444" };
+  const TEMP_LINE_COLOR = { US: "#58a6ff", KR: "#3fb950", JP: "#f59e0b" };
   const STAGE_KO = {
     emerging: "신규부상",
     strengthening: "강화",
@@ -46,7 +47,8 @@
     etfSort: { key: "returns.1m", dir: "desc" },
     modalTicker: null,
     sectorSheetSector: null,
-    rrgFocus: null
+    rrgFocus: null,
+    tempPeriod: 30
   };
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -125,6 +127,14 @@
       renderHitRates();
       renderSignals();
       renderRanking();
+      return;
+    }
+
+    if (action === "temp-period") {
+      const days = parseInt(actionNode.dataset.days || "", 10);
+      if (![30, 60, 90].includes(days)) return;
+      state.tempPeriod = days;
+      renderTemperatureHistory();
       return;
     }
 
@@ -315,6 +325,98 @@
 
       host.append(card);
     });
+
+    renderTemperatureHistory();
+  }
+
+  function renderTemperatureHistory() {
+    const host = byId("temperatureHistory");
+    if (!host) return;
+    host.replaceChildren();
+    setActive("temp-period", "days", String(state.tempPeriod));
+
+    const moneyflow = (state.data && state.data.moneyflow) || {};
+    const history = moneyflow.temperature_history || {};
+    const series = getVisibleMarkets()
+      .map((market) => ({
+        market,
+        rows: (Array.isArray(history[market]) ? history[market] : [])
+          .filter((row) => row && isNum(safeNumber(row.temperature, null)) && row.date)
+          .slice(-state.tempPeriod)
+      }))
+      .filter((entry) => entry.rows.length >= 2);
+
+    if (!series.length) {
+      host.append(el("p", "empty-state", "온도 추이 데이터가 없습니다."));
+      return;
+    }
+
+    const legend = div("temp-legend");
+    series.forEach((entry) => {
+      const last = entry.rows[entry.rows.length - 1];
+      const item = el("span", "temp-legend-item");
+      const dot = el("span", "temp-legend-dot");
+      dot.style.background = TEMP_LINE_COLOR[entry.market] || "#8b949e";
+      item.append(
+        dot,
+        el("span", "", `${entry.market} ${fmtNumber(last.temperature, 1)}`),
+        el("span", "temp-legend-zone", ZONE_KO[last.zone] || "")
+      );
+      legend.append(item);
+    });
+    host.append(legend, makeTemperatureHistoryChart(series));
+  }
+
+  function makeTemperatureHistoryChart(series) {
+    const width = 900;
+    const height = 250;
+    const pad = { left: 44, right: 18, top: 12, bottom: 30 };
+    const plotW = width - pad.left - pad.right;
+    const plotH = height - pad.top - pad.bottom;
+
+    const stamps = series.flatMap((entry) => entry.rows.map((row) => Date.parse(row.date)));
+    const tMin = Math.min(...stamps);
+    const tMax = Math.max(...stamps);
+    const xFor = (t) => pad.left + (tMax === tMin ? 0 : ((t - tMin) / (tMax - tMin)) * plotW);
+    const yFor = (value) => mapValue(clamp(value, 0, 100), 0, 100, pad.top + plotH, pad.top);
+
+    const svg = svgEl("svg", { class: "temp-history-svg", viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "시장 온도 추이" });
+
+    svg.append(
+      svgEl("rect", { x: pad.left, y: yFor(100), width: plotW, height: yFor(65) - yFor(100), fill: "rgba(245,158,11,0.06)" }),
+      svgEl("rect", { x: pad.left, y: yFor(35), width: plotW, height: yFor(0) - yFor(35), fill: "rgba(34,211,238,0.05)" }),
+      svgEl("rect", { x: pad.left, y: pad.top, width: plotW, height: plotH, fill: "none", stroke: "rgba(139,148,158,0.28)" })
+    );
+    [35, 65].forEach((level) => {
+      svg.append(svgEl("line", { x1: pad.left, y1: yFor(level), x2: pad.left + plotW, y2: yFor(level), stroke: "rgba(139,148,158,0.3)", "stroke-width": 1, "stroke-dasharray": "3 4" }));
+    });
+    [0, 35, 65, 100].forEach((level) => {
+      svg.append(svgEl("text", { x: pad.left - 8, y: yFor(level) + 4, fill: "#8b949e", "font-size": 11, "text-anchor": "end" }, String(level)));
+    });
+
+    const tickCount = 4;
+    for (let index = 0; index <= tickCount; index += 1) {
+      const t = tMin + ((tMax - tMin) * index) / tickCount;
+      const date = new Date(t);
+      const label = `${date.getMonth() + 1}/${date.getDate()}`;
+      svg.append(svgEl("text", { x: xFor(t), y: height - 10, fill: "#8b949e", "font-size": 11, "text-anchor": "middle" }, label));
+    }
+
+    series.forEach((entry) => {
+      const color = TEMP_LINE_COLOR[entry.market] || "#8b949e";
+      const path = entry.rows.map((row, index) => {
+        const x = xFor(Date.parse(row.date));
+        const y = yFor(safeNumber(row.temperature, 0));
+        return `${index === 0 ? "M" : "L"} ${round(x)} ${round(y)}`;
+      }).join(" ");
+      const last = entry.rows[entry.rows.length - 1];
+      svg.append(
+        svgEl("path", { d: path, fill: "none", stroke: color, "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round" }),
+        svgEl("circle", { cx: xFor(Date.parse(last.date)), cy: yFor(safeNumber(last.temperature, 0)), r: 3, fill: color })
+      );
+    });
+
+    return svg;
   }
 
   function renderRrg() {

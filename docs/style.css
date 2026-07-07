@@ -460,17 +460,55 @@ h3 {
   white-space: nowrap;
 }
 
-.rrg-svg .sector-trigger {
+.rrg-svg .rrg-point,
+.rrg-svg .rrg-label {
   cursor: pointer;
 }
 
-.rrg-label.sector-trigger:hover,
-.rrg-label.sector-trigger:focus-visible {
+.rrg-label:hover,
+.rrg-label:focus-visible {
   fill: var(--blue);
 }
 
-.rrg-point.sector-trigger:focus-visible {
+.rrg-point:focus-visible {
   stroke-width: 3;
+}
+
+.rrg-focus-chip {
+  align-items: center;
+  background: rgba(88, 166, 255, 0.12);
+  border: 1px solid rgba(88, 166, 255, 0.4);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+}
+
+.rrg-focus-chip strong {
+  font-size: 14px;
+}
+
+.chip-btn {
+  background: rgba(88, 166, 255, 0.16);
+  border: 1px solid rgba(88, 166, 255, 0.44);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+.chip-btn:hover {
+  background: rgba(88, 166, 255, 0.3);
+}
+
+.chip-close {
+  background: transparent;
+  border-color: rgba(139, 148, 158, 0.4);
+  color: #8b949e;
+  margin-left: auto;
 }
 
 .strength-bar,

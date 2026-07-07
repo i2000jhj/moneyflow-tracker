@@ -45,7 +45,8 @@
     etfGroup: "ALL",
     etfSort: { key: "returns.1m", dir: "desc" },
     modalTicker: null,
-    sectorSheetSector: null
+    sectorSheetSector: null,
+    rrgFocus: null
   };
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -114,6 +115,7 @@
       state.rankMarket = market === "ALL" ? "ALL" : market;
       state.signalsVisible = 20;
       state.expandedSector = null;
+      state.rrgFocus = null;
       hideTooltip();
       renderHeader();
       renderGlobalMarketTabs();
@@ -131,6 +133,21 @@
       const market = readMarket(actionNode);
       if (!market) return;
       state.rrgMarket = market;
+      state.rrgFocus = null;
+      renderRrg();
+      return;
+    }
+
+    if (action === "rrg-focus") {
+      const sector = actionNode.dataset.sector || "";
+      if (!sector) return;
+      state.rrgFocus = state.rrgFocus === sector ? null : sector;
+      renderRrg();
+      return;
+    }
+
+    if (action === "rrg-clear-focus") {
+      state.rrgFocus = null;
       renderRrg();
       return;
     }
@@ -314,11 +331,19 @@
       return;
     }
 
-    const attention = (((state.data || {}).moneyflow || {}).attention || [])
-      .filter((item) => activeMarket === "ALL" || item.market === activeMarket)
-      .slice()
-      .sort((a, b) => safeNumber(a.rank_mid, 9999) - safeNumber(b.rank_mid, 9999));
-    const labelSectors = new Set(attention.slice(0, 12).map((item) => item.sector));
+    if (state.rrgFocus && !rows.some((row) => row.sector === state.rrgFocus)) {
+      state.rrgFocus = null;
+    }
+    const focus = state.rrgFocus;
+
+    const labelSectors = new Set(
+      rows
+        .slice()
+        .sort((a, b) => rrgMovement(b) - rrgMovement(a))
+        .slice(0, 15)
+        .map((row) => row.sector)
+    );
+    if (focus) labelSectors.add(focus);
     const points = collectRrgPoints(rows);
     const extent = makeExtent(points);
     const width = 900;
@@ -334,15 +359,49 @@
     appendRrgAxes(svg, width, height, pad, plotW, plotH, x100, y100);
 
     rows.forEach((row, index) => {
+      if (focus && row.sector === focus) return;
       const color = QUAD_COLOR[row.quadrant] || "#8b949e";
-      appendRrgTail(svg, row, extent, pad, plotW, plotH, color);
-      appendRrgPoint(svg, row, index, extent, pad, plotW, plotH, color);
-      if (labelSectors.has(row.sector)) {
-        appendRrgLabel(svg, row, index, extent, pad, plotW, plotH);
+      const dimmed = Boolean(focus);
+      appendRrgTail(svg, row, extent, pad, plotW, plotH, color, dimmed);
+      appendRrgPoint(svg, row, index, extent, pad, plotW, plotH, color, dimmed);
+      if (!focus && labelSectors.has(row.sector)) {
+        appendRrgLabel(svg, row, index, extent, pad, plotW, plotH, false);
       }
     });
 
+    if (focus) {
+      const index = rows.findIndex((row) => row.sector === focus);
+      const row = rows[index];
+      const color = QUAD_COLOR[row.quadrant] || "#8b949e";
+      appendRrgTail(svg, row, extent, pad, plotW, plotH, color, false);
+      appendRrgPoint(svg, row, index, extent, pad, plotW, plotH, color, false, true);
+      appendRrgLabel(svg, row, index, extent, pad, plotW, plotH, true);
+      host.append(makeRrgFocusChip(row));
+    }
+
     host.append(svg);
+  }
+
+  function rrgMovement(row) {
+    const tail = Array.isArray(row.tail) ? row.tail.filter((point) => isNum(point[0]) && isNum(point[1])) : [];
+    if (!tail.length || !isNum(row.rs_ratio) || !isNum(row.rs_momentum)) return 0;
+    const [x0, y0] = tail[0];
+    return Math.hypot(row.rs_ratio - x0, row.rs_momentum - y0);
+  }
+
+  function makeRrgFocusChip(row) {
+    const chip = div("rrg-focus-chip");
+    const name = el("strong", "", row.sector || "");
+    const quad = el("span", "neutral", QUAD_KO[row.quadrant] || row.quadrant || "");
+    const membersBtn = el("button", "chip-btn", "구성종목");
+    membersBtn.type = "button";
+    membersBtn.dataset.action = "open-sector-sheet";
+    membersBtn.dataset.sector = row.sector || "";
+    const closeBtn = el("button", "chip-btn chip-close", "해제 ✕");
+    closeBtn.type = "button";
+    closeBtn.dataset.action = "rrg-clear-focus";
+    chip.append(name, quad, membersBtn, closeBtn);
+    return chip;
   }
 
   function renderRotationPairs() {
@@ -842,13 +901,13 @@
     );
   }
 
-  function appendRrgTail(svg, row, extent, pad, plotW, plotH, color) {
+  function appendRrgTail(svg, row, extent, pad, plotW, plotH, color, dimmed) {
     const tail = Array.isArray(row.tail) ? row.tail.filter((point) => isNum(point[0]) && isNum(point[1])) : [];
     if (tail.length < 2) return;
     for (let index = 1; index < tail.length; index += 1) {
       const from = tail[index - 1];
       const to = tail[index];
-      const opacity = 0.12 + (index / (tail.length - 1)) * 0.36;
+      const opacity = (0.12 + (index / (tail.length - 1)) * 0.36) * (dimmed ? 0.25 : 1);
       svg.append(svgEl("line", {
         x1: rrgX(from[0], extent, pad, plotW),
         y1: rrgY(from[1], extent, pad, plotH),
@@ -862,20 +921,21 @@
     }
   }
 
-  function appendRrgPoint(svg, row, index, extent, pad, plotW, plotH, color) {
+  function appendRrgPoint(svg, row, index, extent, pad, plotW, plotH, color, dimmed, focused) {
+    const baseOpacity = row.small_sample === 1 ? 0.58 : 0.94;
     const circle = svgEl("circle", {
       cx: rrgX(row.rs_ratio, extent, pad, plotW),
       cy: rrgY(row.rs_momentum, extent, pad, plotH),
-      r: row.small_sample === 1 ? 5 : 6,
+      r: focused ? 8 : (row.small_sample === 1 ? 5 : 6),
       fill: color,
       stroke: "#e6edf3",
-      "stroke-width": row.small_sample === 1 ? 1.6 : 1,
+      "stroke-width": focused ? 2 : (row.small_sample === 1 ? 1.6 : 1),
       "stroke-dasharray": row.small_sample === 1 ? "3 3" : "",
-      opacity: row.small_sample === 1 ? 0.58 : 0.94,
+      opacity: dimmed ? 0.18 : baseOpacity,
       "data-rrg-index": index,
-      "data-action": "open-sector-sheet",
+      "data-action": "rrg-focus",
       "data-sector": row.sector || "",
-      class: "rrg-point sector-trigger",
+      class: "rrg-point",
       role: "button",
       tabindex: 0
     });
@@ -883,16 +943,17 @@
     svg.append(circle);
   }
 
-  function appendRrgLabel(svg, row, index, extent, pad, plotW, plotH) {
+  function appendRrgLabel(svg, row, index, extent, pad, plotW, plotH, focused) {
     const label = svgEl("text", {
-      x: rrgX(row.rs_ratio, extent, pad, plotW) + 8,
-      y: rrgY(row.rs_momentum, extent, pad, plotH) - 8,
+      x: rrgX(row.rs_ratio, extent, pad, plotW) + (focused ? 11 : 8),
+      y: rrgY(row.rs_momentum, extent, pad, plotH) - (focused ? 10 : 8),
       fill: "#e6edf3",
-      "font-size": 11,
+      "font-size": focused ? 13 : 11,
+      "font-weight": focused ? 700 : 400,
       "data-rrg-index": index,
-      "data-action": "open-sector-sheet",
+      "data-action": "rrg-focus",
       "data-sector": row.sector || "",
-      class: "rrg-label sector-trigger",
+      class: "rrg-label",
       role: "button",
       tabindex: 0
     }, row.sector || "");

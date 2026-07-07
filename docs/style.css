@@ -446,6 +446,21 @@ h3 {
   line-height: 1;
 }
 
+.signal-warning-badge {
+  justify-self: start;
+  border-color: rgba(245, 158, 11, 0.72) !important;
+  background: rgba(245, 158, 11, 0.18) !important;
+  color: var(--orange) !important;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.signal-excess {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .table-panel {
   overflow: hidden;
 }
@@ -547,6 +562,23 @@ tbody tr:hover {
 .rank-row:hover,
 .etf-bar-row:hover {
   background: rgba(88, 166, 255, 0.08);
+}
+
+.rank-row-reference {
+  opacity: 0.64;
+}
+
+.rank-row-reference:hover {
+  opacity: 0.86;
+}
+
+.rank-reference-header {
+  margin: 10px 2px 2px;
+  border-top: 1px solid var(--border-soft);
+  padding: 12px 8px 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .rank-number,

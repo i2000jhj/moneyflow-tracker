@@ -378,10 +378,10 @@
   function renderHitRates() {
     const host = byId("hitRateCards");
     host.replaceChildren();
-    const hitRates = state.globalMarket === "ALL"
-      ? (((state.data || {}).moneyflow || {}).hit_rates || {})
-      : calculateHitRates(getGlobalFilteredSignals());
-    const keys = state.globalMarket === "ALL"
+    const rawHitRates = (((state.data || {}).moneyflow || {}).hit_rates || {});
+    const hasRawHitRates = state.globalMarket === "ALL" && Object.keys(rawHitRates).length > 0;
+    const hitRates = hasRawHitRates ? rawHitRates : calculateHitRates(getGlobalFilteredSignals());
+    const keys = hasRawHitRates
       ? SIGNAL_ORDER.filter((key) => hitRates[key]).concat(Object.keys(hitRates).filter((key) => !SIGNAL_ORDER.includes(key)))
       : SIGNAL_ORDER;
 
@@ -389,10 +389,15 @@
       const item = hitRates[key] || {};
       const card = div("card hit-card");
       card.append(
-        el("h3", "", SIGNAL_KO[key] || key),
+        el("h3", "", SIGNAL_KO[key] || key)
+      );
+      if (key === "follow_rotation") card.append(makeSignalWarningBadge());
+      card.append(
         el("p", "hit-rate", fmtHitRate(item.hit_rate)),
         el("p", "neutral", `${fmtInteger(item.hits)}/${fmtInteger(item.evaluated)} · 총 ${fmtInteger(item.count)}`)
       );
+      const excessNode = makeHitRateExcess(key, item);
+      if (excessNode) card.append(excessNode);
       host.append(card);
     });
   }
@@ -446,37 +451,19 @@
       return;
     }
 
-    attention.forEach((item, index) => {
-      const row = div("rank-row");
-      row.dataset.action = "toggle-sector";
-      row.dataset.sector = item.sector || "";
-      row.setAttribute("role", "button");
-      row.setAttribute("tabindex", "0");
-      row.setAttribute("aria-expanded", String(state.expandedSector === item.sector));
+    const regularItems = attention.filter((item) => !isSmallSampleAttention(item));
+    const referenceItems = attention.filter(isSmallSampleAttention);
 
-      const score = clamp(safeNumber(item.score_mid, 0), 0, 100);
-      const color = STAGE_COLOR[item.stage] || "#8b949e";
-      const bar = div("rank-bar");
-      const fill = el("i");
-      fill.style.width = `${score}%`;
-      fill.style.background = color;
-      bar.append(fill);
-
-      row.append(
-        el("span", "rank-number", `#${index + 1}`),
-        makeRankSectorCell(item),
-        makeMarketTag(item.market || "—"),
-        makeStageBadge(item.stage),
-        bar,
-        el("span", "score-value", fmtNumber(item.score_mid, 1))
-      );
-
-      if (state.expandedSector === item.sector) {
-        row.append(makeScoreDetail(scoreHistory[item.sector] || [], item.sector));
-      }
-
-      host.append(row);
+    regularItems.forEach((item, index) => {
+      host.append(makeRankingRow(item, scoreHistory, index + 1, false));
     });
+
+    if (referenceItems.length) {
+      host.append(el("p", "rank-reference-header", "표본 부족 (구성 5종목 미만) — 참고용"));
+      referenceItems.forEach((item) => {
+        host.append(makeRankingRow(item, scoreHistory, null, true));
+      });
+    }
   }
 
   function renderEtf() {
@@ -922,11 +909,58 @@
     return block;
   }
 
+  function makeRankingRow(item, scoreHistory, rank, isReference) {
+    const row = div(isReference ? "rank-row rank-row-reference" : "rank-row");
+    row.dataset.action = "toggle-sector";
+    row.dataset.sector = item.sector || "";
+    row.setAttribute("role", "button");
+    row.setAttribute("tabindex", "0");
+    row.setAttribute("aria-expanded", String(state.expandedSector === item.sector));
+
+    const score = clamp(safeNumber(item.score_mid, 0), 0, 100);
+    const color = STAGE_COLOR[item.stage] || "#8b949e";
+    const bar = div("rank-bar");
+    const fill = el("i");
+    fill.style.width = `${score}%`;
+    fill.style.background = color;
+    bar.append(fill);
+
+    const rankNode = el("span", "rank-number", rank ? `#${rank}` : "");
+    if (!rank) rankNode.setAttribute("aria-hidden", "true");
+    row.append(
+      rankNode,
+      makeRankSectorCell(item),
+      makeMarketTag(item.market || "—"),
+      makeStageBadge(item.stage),
+      bar,
+      el("span", "score-value", fmtNumber(item.score_mid, 1))
+    );
+
+    if (state.expandedSector === item.sector) {
+      row.append(makeScoreDetail(scoreHistory[item.sector] || [], item.sector));
+    }
+
+    return row;
+  }
+
   function makeRankSectorCell(item) {
     const cellNode = el("span", "rank-sector-cell");
     cellNode.append(makeSectorTrigger(item.sector, "sector-name"));
     if (isSmallSampleAttention(item)) cellNode.append(makeSmallSampleBadge());
     return cellNode;
+  }
+
+  function makeSignalWarningBadge() {
+    const badge = makeBadge("역지표 관찰", "#f59e0b");
+    badge.classList.add("signal-warning-badge");
+    return badge;
+  }
+
+  function makeHitRateExcess(key, item) {
+    const value = key === "take_profit" ? item.avg_benchmark_after : item.avg_excess;
+    if (!isNum(value)) return null;
+    const label = key === "take_profit" ? "신호 후 시장" : "평균 초과수익";
+    return el("p", `signal-excess ${valueClass(value)}`, `${label} ${fmtPercent(value * 100, 1, true)}`);
   }
 
   function makeSectorMemberChip(member) {
@@ -1184,11 +1218,19 @@
       const rows = signals.filter((signal) => signal.signal_type === key);
       const evaluated = rows.filter((signal) => signal.hit !== null && signal.hit !== undefined).length;
       const hits = rows.filter((signal) => signal.hit === 1).length;
+      const excessRows = rows.filter((signal) => isNum(signal.forward_return) && isNum(signal.benchmark_return));
+      const winExcessRows = excessRows.filter((signal) => signal.hit === 1);
+      const lossExcessRows = excessRows.filter((signal) => signal.hit === 0);
+      const benchmarkRows = rows.filter((signal) => isNum(signal.benchmark_return));
       acc[key] = {
         count: rows.length,
         evaluated,
         hits,
-        hit_rate: evaluated > 0 ? hits / evaluated : null
+        hit_rate: evaluated > 0 ? hits / evaluated : null,
+        avg_excess: average(excessRows.map((signal) => signal.forward_return - signal.benchmark_return)),
+        avg_win_excess: average(winExcessRows.map((signal) => signal.forward_return - signal.benchmark_return)),
+        avg_loss_excess: average(lossExcessRows.map((signal) => signal.forward_return - signal.benchmark_return)),
+        avg_benchmark_after: average(benchmarkRows.map((signal) => signal.benchmark_return))
       };
       return acc;
     }, {});
@@ -1464,6 +1506,12 @@
 
   function round(value) {
     return Math.round(value * 100) / 100;
+  }
+
+  function average(values) {
+    const nums = values.filter(isNum);
+    if (!nums.length) return null;
+    return nums.reduce((sum, value) => sum + value, 0) / nums.length;
   }
 
   function withAlpha(hex, alpha) {

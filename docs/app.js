@@ -58,7 +58,7 @@
 
   async function loadData() {
     try {
-      const response = await fetch("data.json", { cache: "no-store" });
+      const response = await fetch("data.json", { cache: "no-cache" });
       if (!response.ok) {
         throw new Error(`data.json HTTP ${response.status}`);
       }
@@ -274,6 +274,17 @@
     const moneyflow = data.moneyflow || {};
     renderAsOfBadge(moneyflow);
     text("generatedBadge", `갱신 ${formatDateTime(data.generated_at)}`);
+    renderFreshnessNote(moneyflow);
+  }
+
+  function renderFreshnessNote(moneyflow) {
+    const node = byId("freshnessNote");
+    if (!node) return;
+    const count = safeNumber(moneyflow.stale_tickers, null);
+    node.hidden = !isNum(count) || count <= 0;
+    if (!node.hidden) {
+      node.textContent = `데이터 신선도: 시세 결측·지연 ${fmtInteger(count)}종목 — 해당 종목은 섹터 점수에서 제외 또는 지연 반영됩니다.`;
+    }
   }
 
   function renderGlobalMarketTabs() {
@@ -1062,6 +1073,12 @@
     svg.append(label);
   }
 
+  function scoreHistoryRows(hist) {
+    if (Array.isArray(hist)) return hist;
+    if (!hist || !Array.isArray(hist.d)) return [];
+    return hist.d.map((date, index) => ({ date, s: hist.s[index], m: hist.m[index] }));
+  }
+
   function makeScoreDetail(rows, sector) {
     const detail = div("score-detail");
     const legend = div("score-legend");
@@ -1122,7 +1139,7 @@
     );
 
     if (state.expandedSector === item.sector) {
-      row.append(makeScoreDetail(scoreHistory[item.sector] || [], item.sector));
+      row.append(makeScoreDetail(scoreHistoryRows(scoreHistory[item.sector]), item.sector));
     }
 
     return row;

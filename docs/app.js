@@ -25,8 +25,17 @@
   };
   const QUAD_KO = { leading: "주도", weakening: "약화", lagging: "소외", improving: "개선" };
   const QUAD_COLOR = { leading: "#3fb950", weakening: "#f59e0b", lagging: "#ef4444", improving: "#58a6ff" };
-  const SIGNAL_KO = { take_profit: "차익실현", next_leader: "차기 주도주", follow_rotation: "순환매 추종" };
-  const DIR_KO = { buy_watch: "매수관찰", reduce: "비중축소" };
+  const SIGNAL_KO = {
+    take_profit: "차익실현",
+    next_leader: "차기 주도주",
+    follow_rotation: "순환매 추종",
+    temp_prealert_hot: "과열 예비",
+    temp_prealert_cold: "패닉 예비",
+    temp_recovery_top: "고점 확인",
+    temp_recovery_bottom: "바닥 확인",
+    breadth_divergence: "다이버전스"
+  };
+  const DIR_KO = { buy_watch: "매수관찰", reduce: "비중축소", reduce_watch: "축소관찰" };
   const SIGNAL_ORDER = ["take_profit", "next_leader", "follow_rotation"];
   const ZONE_HYSTERESIS_TEXT = "경계 부근 깜빡임 방지를 위해 직전 구간을 유지합니다 (예: 중립은 70까지 유지)";
   installInlineFavicon();
@@ -320,11 +329,13 @@
       const badges = div("badge-row");
       if (item.capitulation === 1) badges.append(makeBadge("⚡투매", "#58a6ff"));
       if (item.blowoff === 1) badges.append(makeBadge("⚡분출", "#ef4444"));
+      if (item.breadth_divergence === 1) badges.append(makeBadge("📉다이버전스", "#f59e0b"));
       if (badges.childElementCount) card.append(badges);
 
       const metrics = div("mini-metrics");
       metrics.append(
         el("span", "", `VIX ${fmtNumber(item.vix, 2)}`),
+        el("span", "", `조기경보 ${fmtNumber(item.fast_temp, 1)}`),
         el("span", "", `20일 폭 ${fmtNumber(item.breadth_sma20, 1)}`),
         el("span", "", `괴리 ${fmtNumber(item.disparity_pctile, 1)}`),
         el("span", "", `추력 ${fmtNumber(item.thrust_pctile, 1)}`),
@@ -375,6 +386,10 @@
       );
       legend.append(item);
     });
+    const hasFast = series.some((entry) => entry.rows.some((row) => isNum(safeNumber(row.fast, null))));
+    if (hasFast) {
+      legend.append(el("span", "temp-legend-zone", "점선 = 조기경보선 (당일 스러스트·변동성)"));
+    }
     host.append(legend, makeTemperatureHistoryChart(series));
   }
 
@@ -415,6 +430,17 @@
 
     series.forEach((entry) => {
       const color = TEMP_LINE_COLOR[entry.market] || "#8b949e";
+      const fastRows = entry.rows.filter((row) => isNum(safeNumber(row.fast, null)));
+      if (fastRows.length >= 2) {
+        const fastPath = fastRows.map((row, index) => {
+          const x = xFor(Date.parse(row.date));
+          const y = yFor(safeNumber(row.fast, 0));
+          return `${index === 0 ? "M" : "L"} ${round(x)} ${round(y)}`;
+        }).join(" ");
+        svg.append(
+          svgEl("path", { class: "temp-fast-line", d: fastPath, fill: "none", stroke: color, "stroke-width": 1.4, "stroke-dasharray": "4 4", opacity: 0.55, "stroke-linecap": "round", "stroke-linejoin": "round" })
+        );
+      }
       const path = entry.rows.map((row, index) => {
         const x = xFor(Date.parse(row.date));
         const y = yFor(safeNumber(row.temperature, 0));

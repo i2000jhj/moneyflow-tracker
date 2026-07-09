@@ -1438,13 +1438,26 @@
     return !name || name === ticker ? ticker : `${name} (${ticker})`;
   }
 
+  function shortCompanyName(name) {
+    if (!name) return "";
+    const suffix = /,?\s+(Incorporated|Inc\.?|Corporation|Corp\.?|Co\.,?\s*Ltd\.?|Ltd\.?|Company|Holdings?|PLC|N\.V\.|S\.A\.|AG|KK)\s*$/i;
+    let out = String(name).trim().replace(suffix, "").replace(suffix, "").trim();
+    if (out.length > 18) out = `${out.slice(0, 17)}…`;
+    return out;
+  }
+
   function formatTooltipMembers(sector) {
     const members = getSectorMembers(sector);
     if (!members.length) return "";
-    const tickers = members.slice(0, 5).map((member) => member.t).filter(Boolean);
-    if (!tickers.length) return "";
-    const extra = members.length - tickers.length;
-    return extra > 0 ? `${tickers.join(", ")} 외 ${extra}개` : tickers.join(", ");
+    const labels = members.slice(0, 5)
+      .filter((member) => member.t)
+      .map((member) => {
+        const short = shortCompanyName(member.n);
+        return short && short !== member.t ? `${short}(${member.t})` : member.t;
+      });
+    if (!labels.length) return "";
+    const extra = members.length - labels.length;
+    return extra > 0 ? `${labels.join(", ")} 외 ${extra}개` : labels.join(", ");
   }
 
   function isSmallSampleSector(sector) {

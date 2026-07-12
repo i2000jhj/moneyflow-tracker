@@ -33,7 +33,8 @@
     temp_prealert_cold: "패닉 예비",
     temp_recovery_top: "고점 확인",
     temp_recovery_bottom: "바닥 확인",
-    breadth_divergence: "다이버전스"
+    breadth_divergence: "다이버전스",
+    panic_entry: "패닉 진입"
   };
   const DIR_KO = { buy_watch: "매수관찰", reduce: "비중축소", reduce_watch: "축소관찰" };
   const SIGNAL_ORDER = ["take_profit", "next_leader", "follow_rotation"];
@@ -595,9 +596,8 @@
     const rawHitRates = (((state.data || {}).moneyflow || {}).hit_rates || {});
     const hasRawHitRates = state.globalMarket === "ALL" && Object.keys(rawHitRates).length > 0;
     const hitRates = hasRawHitRates ? rawHitRates : calculateHitRates(getGlobalFilteredSignals());
-    const keys = hasRawHitRates
-      ? SIGNAL_ORDER.filter((key) => hitRates[key]).concat(Object.keys(hitRates).filter((key) => !SIGNAL_ORDER.includes(key)))
-      : SIGNAL_ORDER;
+    const keys = SIGNAL_ORDER.filter((key) => hitRates[key])
+      .concat(Object.keys(hitRates).filter((key) => !SIGNAL_ORDER.includes(key)));
 
     keys.forEach((key) => {
       const item = hitRates[key] || {};
@@ -614,6 +614,14 @@
       if (excessNode) card.append(excessNode);
       host.append(card);
     });
+
+    if (!hasRawHitRates && state.globalMarket !== "ALL") {
+      const caption = el("p", "neutral hit-caption", `${state.globalMarket} 최근 표본 기준 — 전체 누적 집계와 다를 수 있음`);
+      caption.style.gridColumn = "1 / -1";
+      caption.style.margin = "0";
+      caption.style.fontSize = "12px";
+      host.append(caption);
+    }
   }
 
   function renderSignals() {
@@ -1471,7 +1479,9 @@
   }
 
   function calculateHitRates(signals) {
-    return SIGNAL_ORDER.reduce((acc, key) => {
+    const extraKeys = [...new Set(signals.map((signal) => signal.signal_type))]
+      .filter((key) => key && !SIGNAL_ORDER.includes(key));
+    return SIGNAL_ORDER.concat(extraKeys).reduce((acc, key) => {
       const rows = signals.filter((signal) => signal.signal_type === key);
       const evaluated = rows.filter((signal) => signal.hit !== null && signal.hit !== undefined).length;
       const hits = rows.filter((signal) => signal.hit === 1).length;
@@ -1613,7 +1623,7 @@
 
   function resultCell(signal) {
     const value = signal.hit === 1 ? "✅적중" : signal.hit === 0 ? "❌실패" : "⏳평가중";
-    const extra = isNum(signal.forward_return) ? ` ${fmtPercent(signal.forward_return, 1, true)}` : "";
+    const extra = isNum(signal.forward_return) ? ` ${fmtPercent(signal.forward_return * 100, 1, true)}` : "";
     return cell(`${value}${extra}`, signal.hit === 1 ? "positive" : signal.hit === 0 ? "negative" : "neutral");
   }
 
@@ -1749,8 +1759,23 @@
   }
 
   function isStaleDate(value) {
-    const days = daysFromToday(value);
-    return days !== null && days >= 3;
+    const days = businessDaysFromToday(value);
+    return days !== null && days > 2;
+  }
+
+  function businessDaysFromToday(value) {
+    const date = parseIsoDate(value);
+    if (!date) return null;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let count = 0;
+    const cursor = new Date(date.getTime());
+    while (cursor.getTime() < today.getTime()) {
+      cursor.setDate(cursor.getDate() + 1);
+      const day = cursor.getDay();
+      if (day !== 0 && day !== 6) count += 1;
+    }
+    return count;
   }
 
   function daysFromToday(value) {
